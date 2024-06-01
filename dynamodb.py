@@ -6,7 +6,7 @@ from datetime import date
 def login():
 	try:
 		dynamodb = boto3.resource('dynamodb', region_name='us-west-2')
-		table = dynamodb.Table('iOweTea-login')
+		table = dynamodb.Table('smartgarden_login')
 		response = table.scan()
 
 		items = response['Items']
@@ -20,7 +20,7 @@ def login():
 def get_data():
 	try:
 		dynamodb = boto3.resource('dynamodb', region_name='us-west-2')
-		table = dynamodb.Table('iOweTea-iotdata')
+		table = dynamodb.Table('smartgarden_readings')
 
 		startdate = date.today().isoformat()
 		response = table.query(KeyConditionExpression=Key('id').eq('id_smartgarden') & Key('datetimeid').begins_with(startdate),
@@ -42,7 +42,7 @@ def get_chart_data():
 	try:
 
 		dynamodb = boto3.resource('dynamodb', region_name='us-west-2')
-		table = dynamodb.Table('iOweTea-iotdata')
+		table = dynamodb.Table('smartgarden_readings')
 
 		startdate = date.today().isoformat()
 		response = table.query(KeyConditionExpression=Key('id').eq('id_smartgarden') & Key('datetimeid').begins_with(startdate),
@@ -63,7 +63,7 @@ def get_chart_data():
 def get_status():
 	try:
 		dynamodb = boto3.resource('dynamodb', region_name='us-west-2')
-		table = dynamodb.Table('iOweTea-statusData')
+		table = dynamodb.Table('smartgarden_status')
 
 		startdate = date.today().isoformat()
 		response = table.query(KeyConditionExpression=Key('id').eq('id_status') & Key('datetimeid').begins_with(startdate),
@@ -84,7 +84,7 @@ def send_status(status):
 	try:
 		# print("status", status)
 		dynamodb = boto3.resource('dynamodb', region_name='us-west-2')
-		table = dynamodb.Table('iOweTea-statusData')
+		table = dynamodb.Table('smartgarden_status')
 
 		now = dt.datetime.now()
 		new_item = {
