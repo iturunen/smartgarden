@@ -6,13 +6,13 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import {NodejsFunction} from "aws-cdk-lib/aws-lambda-nodejs";
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
-import * as dotenv from "dotenv";
-dotenv.config();
-// TODO:  env vars props?
-const adminUserName = process.env.ADMIN_USER_NAME;
+
+interface DataPipelineStackProps extends cdk.StackProps {
+  adminUserName: string;
+}
 
 export class DataPipelineStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: DataPipelineStackProps) {
     super(scope, id, props);
     const stackName = id;
 
@@ -47,10 +47,10 @@ export class DataPipelineStack extends cdk.Stack {
 
     // intialize the table with some user data
     const loginSecret = new secretsmanager.Secret(this, 'SmartGardenLoginSecret', {
-      secretName: 'smartgarden/login',
+      secretName: `${stackName}-login`,
       generateSecretString: {
         secretStringTemplate: JSON.stringify({
-          username: adminUserName,
+          username: props.adminUserName,
         }),
         generateStringKey: 'password',
         passwordLength: 16,
@@ -58,6 +58,7 @@ export class DataPipelineStack extends cdk.Stack {
         excludePunctuation: true,
         requireEachIncludedType: true,
       },
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
   const initializerFunction = new NodejsFunction(this, 'SmartGardenAdminUserInitializer', {
@@ -69,6 +70,8 @@ export class DataPipelineStack extends cdk.Stack {
       LOGIN_TABLE_NAME: loginTable.tableName,
     },
   });
+  initializerFunction.node.addDependency(loginSecret);
+  initializerFunction.node.addDependency(loginTable);
 
   loginSecret.grantRead(initializerFunction);
   loginTable.grantWriteData(initializerFunction);
@@ -76,6 +79,7 @@ export class DataPipelineStack extends cdk.Stack {
   new cdk.CustomResource(this, 'InitUserResource', {
     serviceToken: initializerFunction.functionArn,
     resourceType: "Custom::InitUserCustomResource",
+    serviceTimeout: cdk.Duration.minutes(1),
   });
 
     const iotRole = new iam.Role(this, 'IotDynamoDBRole', {

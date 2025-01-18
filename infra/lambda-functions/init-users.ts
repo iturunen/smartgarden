@@ -5,7 +5,7 @@ import {
   CloudFormationCustomResourceResponse,
   CloudFormationCustomResourceUpdateEvent,
 } from "aws-lambda";
-import { DynamoDBClient, PutItemCommand, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
+import { DeleteItemCommand, DynamoDBClient, PutItemCommand, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import * as https from "https";
 import * as url from "url";
@@ -18,39 +18,45 @@ exports.handler = async (event: CloudFormationCustomResourceEvent): Promise<void
   console.log("Received event:", JSON.stringify(event, null, 2));
 
   const loginSecretArn = process.env.LOGIN_SECRET_ARN;
-  const tableName = process.env.TABLE_NAME;
+  const loginTableableName = process.env.LOGIN_TABLE_NAME;
 
-  if (!event.RequestType || !loginSecretArn || !tableName) {
+  if (!event.RequestType || !loginSecretArn || !loginTableableName) {
     throw new Error("Invalid event: Missing RequestType");
   }
-
+  let physicalResourceId = undefined;
+  if (event.RequestType === "Update" || event.RequestType === "Delete") {
+    physicalResourceId = event.PhysicalResourceId
+  }
+  else {
+    physicalResourceId = `${event.LogicalResourceId}-${Date.now()}`; 
+  }
   try {
     switch (event.RequestType) {
       case "Create":
-        await handleCreate(event as CloudFormationCustomResourceCreateEvent, loginSecretArn, tableName);
+        await handleCreate(event as CloudFormationCustomResourceCreateEvent, loginSecretArn, loginTableableName);
         break;
 
       case "Update":
-        await handleUpdate(event as CloudFormationCustomResourceUpdateEvent, loginSecretArn, tableName);
+        await handleUpdate(event as CloudFormationCustomResourceUpdateEvent, loginSecretArn, loginTableableName);
         break;
 
       case "Delete":
-        await handleDelete(event as CloudFormationCustomResourceDeleteEvent);
+        await handleDelete(event as CloudFormationCustomResourceDeleteEvent, loginSecretArn, loginTableableName);
         break;
 
       default:
         throw new Error(`Unknown RequestType: ${event}`);
     }
-
-    await sendResponse(event, "SUCCESS", "Operation completed successfully");
+    await sendResponse(event, "SUCCESS", "Operation completed successfully", physicalResourceId);
   } catch (error) {
     console.error("Error handling event:", error);
-    await sendResponse(event, "FAILED", error.message || "Unknown error");
+    await sendResponse(event, "FAILED", error instanceof Error ? error.message : "Unknown error", physicalResourceId);
   }
 };
 
-async function handleCreate(event: CloudFormationCustomResourceCreateEvent, loginSecretArn: string, tableName: string): Promise<void> {
+async function handleCreate(event: CloudFormationCustomResourceCreateEvent, loginSecretArn: string, loginTableableName: string): Promise<void> {
   console.log("Handling Create event...");
+  console.log(event);
 
   // Fetch secret from Secrets Manager
   const secretValue = await fetchUserSecret(loginSecretArn);
@@ -59,7 +65,25 @@ async function handleCreate(event: CloudFormationCustomResourceCreateEvent, logi
     throw new Error("Invalid secret value");
   }
   const params = {
-    TableName: tableName,
+    TableName: loginTableableName,
+    Item: {
+      username: { S: secretValue.username },
+      password: { S: secretValue.password },
+    },
+  };
+  await dynamoDB.send(new PutItemCommand(params));
+  console.log("User updated in DynamoDB");
+}
+
+async function handleUpdate(event: CloudFormationCustomResourceUpdateEvent, loginSecretArn: string, loginTableableName: string): Promise<void> {
+  console.log("Handling Update event...");
+  console.log(event);
+  const secretValue = await fetchUserSecret(loginSecretArn);
+  if (!secretValue) {
+    throw new Error("Invalid secret value");
+  }
+  const params = {
+    TableName: loginTableableName,
     Key: {
       username: { S: secretValue.username },
     },
@@ -69,29 +93,15 @@ async function handleCreate(event: CloudFormationCustomResourceCreateEvent, logi
     },
   };
   await dynamoDB.send(new UpdateItemCommand(params));
-  console.log("User updated in DynamoDB");
-}
-
-async function handleUpdate(event: CloudFormationCustomResourceUpdateEvent, loginSecretArn: string, tableName: string): Promise<void> {
-  console.log("Handling Update event...");
-  const secretValue = await fetchUserSecret(loginSecretArn);
-  if (!secretValue) {
-    throw new Error("Invalid secret value");
-  }
-  const params = {
-    TableName: tableName,
-    Item: {
-      username: { S: secretValue.username },
-      password: { S: secretValue.password },
-    },
-  };
-  await dynamoDB.send(new UpdateItemCommand(params));
 
 
 }
 
 async function fetchUserSecret(secretArn: string): Promise<{ username: string; password: string } | undefined> {
-  const secret = await secretsManager.send(new GetSecretValueCommand({ SecretId: process.env.LOGIN_SECRET_ARN }));
+  if (!secretArn) {
+    return;
+  }
+  const secret = await secretsManager.send(new GetSecretValueCommand({ SecretId: secretArn }));
   if (!secret.SecretString) return;
   const secretValue = JSON.parse(secret.SecretString || "{}");
   if (!secretValue.username || !secretValue.password)
@@ -100,21 +110,35 @@ async function fetchUserSecret(secretArn: string): Promise<{ username: string; p
 };
 
 
-async function handleDelete(event: CloudFormationCustomResourceDeleteEvent): Promise<void> {
+async function handleDelete(event: CloudFormationCustomResourceDeleteEvent, loginSecretArn:string, loginTable:string): Promise<void> {
   console.log("Handling Delete event...");
-  // Add logic for deletes if needed
+  console.log(event);
+  const secret = await fetchUserSecret(loginSecretArn);
+  if (!secret) {
+    throw new Error("Invalid secret value");
+  }
+  const params = {
+    TableName: loginTable,
+    Key: {
+      username: { S: secret.username },
+    },
+  };
+  await dynamoDB.send(new DeleteItemCommand(params));
+  console.log("User deleted from DynamoDB");
+
   console.log("Delete event logic is currently not implemented.");
 }
 
 async function sendResponse(
   event: CloudFormationCustomResourceEvent,
   status: string,
-  reason: string
-): Promise<void> {
+  reason: string,
+  physicalResourceId: string
+): Promise<CloudFormationCustomResourceResponse> {
   const responseBody = {
     Status: status,
     Reason: reason,
-    PhysicalResourceId: event.PhysicalResourceId || "CustomResourceHandler",
+    PhysicalResourceId: physicalResourceId,
     StackId: event.StackId,
     RequestId: event.RequestId,
     LogicalResourceId: event.LogicalResourceId,
@@ -138,7 +162,6 @@ async function sendResponse(
   return new Promise((resolve, reject) => {
     const request = https.request(options, (response) => {
       console.log(`Response status code: ${response.statusCode}`);
-      resolve();
     });
 
     request.on("error", (error) => {
