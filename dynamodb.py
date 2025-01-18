@@ -2,11 +2,19 @@ import boto3
 from boto3.dynamodb.conditions import Key, Attr
 import datetime as dt
 from datetime import date
+import os
+import dotenv
+
+dotenv.load_dotenv()
+
+readings_table_name = os.environ['READINGS_TABLE_NAME']
+status_table_name = os.environ['STATUS_TABLE_NAME']
+login_table_name = os.environ['LOGIN_TABLE_NAME']
 
 def login():
 	try:
 		dynamodb = boto3.resource('dynamodb', region_name='us-west-2')
-		table = dynamodb.Table('smartgarden_login')
+		table = dynamodb.Table(login_table_name)
 		response = table.scan()
 
 		items = response['Items']
@@ -20,7 +28,7 @@ def login():
 def get_data():
 	try:
 		dynamodb = boto3.resource('dynamodb', region_name='us-west-2')
-		table = dynamodb.Table('smartgarden_readings')
+		table = dynamodb.Table(readings_table_name)
 
 		startdate = date.today().isoformat()
 		response = table.query(KeyConditionExpression=Key('id').eq('id_smartgarden') & Key('datetimeid').begins_with(startdate),
@@ -42,7 +50,7 @@ def get_chart_data():
 	try:
 
 		dynamodb = boto3.resource('dynamodb', region_name='us-west-2')
-		table = dynamodb.Table('smartgarden_readings')
+		table = dynamodb.Table(status_table_name)
 
 		startdate = date.today().isoformat()
 		response = table.query(KeyConditionExpression=Key('id').eq('id_smartgarden') & Key('datetimeid').begins_with(startdate),
@@ -63,7 +71,7 @@ def get_chart_data():
 def get_status():
 	try:
 		dynamodb = boto3.resource('dynamodb', region_name='us-west-2')
-		table = dynamodb.Table('smartgarden_status')
+		table = dynamodb.Table(status_table_name)
 
 		startdate = date.today().isoformat()
 		response = table.query(KeyConditionExpression=Key('id').eq('id_status') & Key('datetimeid').begins_with(startdate),
@@ -84,7 +92,7 @@ def send_status(status):
 	try:
 		# print("status", status)
 		dynamodb = boto3.resource('dynamodb', region_name='us-west-2')
-		table = dynamodb.Table('smartgarden_status')
+		table = dynamodb.Table(status_table_name)
 
 		now = dt.datetime.now()
 		new_item = {

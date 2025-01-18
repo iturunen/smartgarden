@@ -1,1 +1,5 @@
 credentials/
+credentials*
+__pycache__/
+cdk.out/
+node_modules/

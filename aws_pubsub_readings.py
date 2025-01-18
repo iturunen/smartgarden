@@ -5,7 +5,6 @@ import serial
 from time import sleep
 from dotenv import load_dotenv
 import os
-import sys
 
 from utils import get_port
 
@@ -61,8 +60,8 @@ while True:
 	print("Going read a lines")
 	temp = float(ser.readline())
 	hum = float(ser.readline())
-	soil = int(ser.readline())
-	light = int(ser.readline())
+	soil = float(ser.readline())
+	light = float(ser.readline())
 
 	print("Read all lines")
 	print("Temperature: ", temp)

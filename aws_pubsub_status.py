@@ -20,7 +20,7 @@ host = os.getenv('HOST')
 rootCAPath = os.getenv('ROOT_CA_PATH')
 certificatePath = os.getenv('CERTIFICATE_PATH')
 privateKeyPath = os.getenv('PRIVATE_KEY_PATH')
-table_name = os.getenv('TABLE_NAME')
+table_name = os.getenv('STATUS_TABLE_NAME')
 
 # Get port
 port = get_port(port_windows, port_linux)
@@ -57,9 +57,18 @@ while True:
     print("sts.get_caller_identity: ", session)
 
     dynamodb = boto3.resource('dynamodb')
+    print(table_name)
     table = dynamodb.Table(table_name)
 
     response = table.query(KeyConditionExpression=Key('id').eq('id_status'), ScanIndexForward=False)
+
+    if not response['Items']:
+        print(f"No status found, trying again. { 5 - loopCount} tries remaining.")
+        loopCount += 1
+        if loopCount > 5:
+            print("No status found after 5 tries. Exiting.")
+            break
+        continue
 
     items = response['Items']
     print("Got items:", items)
