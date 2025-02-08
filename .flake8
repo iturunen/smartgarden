@@ -1,0 +1,12 @@
+[flake8]
+extend-ignore = E203, E501 
+exclude =
+    .git,
+    .venv,
+    __pycache__,
+    .pytest_cache,
+    .vscode,
+    lambda_function/__pycache__,
+    test/__pycache__,
+    test/test_resources
+    infra/

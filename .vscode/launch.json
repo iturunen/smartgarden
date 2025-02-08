@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run Scripts readings",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/aws_pubsub_readings.py",
+            "console": "integratedTerminal",
+            "python": "${workspaceFolder}/.venv/bin/python"
+        },
+        {
+            "name": "Run Script status",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/aws_pubsub_status.py",
+            "console": "integratedTerminal",
+            "python": "${workspaceFolder}/.venv/bin/python"
+        }
+    ]
+}

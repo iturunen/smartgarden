@@ -28,16 +28,16 @@ const rootCertificate = fs.readFileSync(
 );
 const host = fs.readFileSync(path.join(credentialsDir, "host.txt"), "utf8");
 
-export class SecretStack extends cdk.Stack {
+export class IotSecret extends cdk.Stack {
   secretName: string;
   constructor(scope: Construct, id: string, props: cdk.StackProps) {
     super(scope, id, props);
     const stackName = id;
-    this.secretName = `${stackName}-iot-certificate`;
+    this.secretName = `${stackName}-iot-certificates`;
     // create secret for certificates that are read by the iot devices
     // certificate.pem.crt, private.pem.key, and public.pem.key
     // init by coppying from local files credentials directory
-    const secret = new secretsmanager.Secret(this, "SmartGardenIotCertSecret", {
+    new secretsmanager.Secret(this, "SmartGardenIotCertSecret", {
       secretName: this.secretName,
       secretObjectValue: {
         certificate: cdk.SecretValue.unsafePlainText(""),
@@ -45,13 +45,15 @@ export class SecretStack extends cdk.Stack {
         rootCertificate: cdk.SecretValue.unsafePlainText(""),
         host: cdk.SecretValue.unsafePlainText(""),
       },
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
-    // hack to update secret value if it is empty so no need to laboriously update it with custom resource
-    // or expose it in plain text in the stack template
+
     this.updateSecretValue(this.secretName, certificate, privateKey, rootCertificate, host);
+
   }
-  // get secret and update it if it exists and values are ''
+
+  // Hacky way to update secret value if it is empty so no need to laboriously update it with custom resource
+  // or expose it in plain text in the stack template
   async updateSecretValue(
     secretName: string,
     certificate: string,
@@ -59,35 +61,39 @@ export class SecretStack extends cdk.Stack {
     rootCertificate: string,
     host: string
   ) {
-    const getSecretValueCommand = new GetSecretValueCommand({
-      SecretId: secretName,
-    });
-    const data = await client.send(getSecretValueCommand);
-
-    const jsonData = JSON.parse(data.SecretString || "{}");
-    if (
-      jsonData.certificate === "" &&
-      jsonData.privateKey === "" &&
-      jsonData.rootCertificate === "" &&
-      jsonData.host === ""
-    ) {
-      const putSecretValueCommand = new PutSecretValueCommand({
+    try {
+      const getSecretValueCommand = new GetSecretValueCommand({
         SecretId: secretName,
-        SecretString: JSON.stringify({
-          certificate: certificate,
-          privateKey: privateKey,
-          rootCertificate: rootCertificate,
-          host: host,
-        }),
       });
-      client
-        .send(putSecretValueCommand)
-        .then((data) => {
-          console.log(data);
-        })
-        .catch((error) => {
-          console.log(error);
+
+      const data = await client.send(getSecretValueCommand);
+
+      const jsonData = JSON.parse(data?.SecretString || "{}");
+
+      if (
+        jsonData.certificate === "" &&
+        jsonData.privateKey === "" &&
+        jsonData.rootCertificate === "" &&
+        jsonData.host === ""
+      ) {
+        const putSecretValueCommand = new PutSecretValueCommand({
+          SecretId: secretName,
+          SecretString: JSON.stringify({
+            certificate,
+            privateKey,
+            rootCertificate,
+            host,
+          }),
         });
+
+        const result = await client.send(putSecretValueCommand);
+        console.log("Secret updated successfully:", result);
+      } else {
+        console.log("Secret already has values, no update performed.");
+      }
+    } catch (error) {
+      console.error("Error updating secret:", error);
+      console.error("This is expected when running the stack for the first time.");
     }
   }
 }
